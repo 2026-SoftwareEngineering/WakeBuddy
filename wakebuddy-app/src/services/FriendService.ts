@@ -3,7 +3,16 @@ import { User } from "../models/User";
 
 // 임시 데이터 (Firebase 연동 전)
 const mockFriendships: Friendship[] = [];
-const mockUsers: User[] = [];
+// Firebase 연동 전 친구 추가 테스트용 임시 사용자 데이터
+// Firebase 연동 후에는 Firestore users 컬렉션 조회로 대체 예정
+const mockUsers: User[] = [
+  {
+    uid: "friend-1",
+    email: "friend@test.com",
+    displayName: "테스트 친구",
+    createdAt: new Date(),
+  },
+];
 
 export const FriendService = {
   // 친구 목록 조회
@@ -45,14 +54,15 @@ export const FriendService = {
   },
 
   // 친구 삭제
-  async removeFriend(friendshipId: string): Promise<void> {
-    const index = mockFriendships.findIndex(
-      (f) => f.friendshipId === friendshipId,
-    );
-    if (index === -1) {
-      throw new Error("친구 관계를 찾을 수 없습니다.");
-    }
+  async removeFriend(userId: string, friendId: string): Promise<void> {
+  const index = mockFriendships.findIndex(
+    (f) => f.userId === userId && f.friendId === friendId,
+  );
 
-    mockFriendships.splice(index, 1);
+  if (index === -1) {
+    throw new Error("친구 관계를 찾을 수 없습니다.");
+  }
+
+  mockFriendships.splice(index, 1);
   },
 };
