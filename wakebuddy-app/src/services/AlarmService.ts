@@ -229,6 +229,35 @@ export const AlarmService = {
   },
 
   /**
+   * 내가 생성한 알람 조회
+   *
+   * creatorId가 현재 사용자 uid와 같은 알람을 조회한다.
+   *
+   * 이 중 ownerId가 현재 사용자 uid와 다른 알람은
+   * 내가 친구에게 만들어준 친구 알람이다.
+   */
+  async getCreatedAlarms(userId: string): Promise<Alarm[]> {
+    if (!userId) {
+      throw new Error("사용자 정보가 없습니다.");
+    }
+
+    const alarmQuery = query(
+      collection(db, ALARMS_COLLECTION),
+      where("creatorId", "==", userId),
+    );
+
+    const snapshot = await getDocs(alarmQuery);
+
+    const alarms = snapshot.docs.map((alarmDoc) =>
+      mapAlarmDocument(alarmDoc.id, alarmDoc.data()),
+    );
+
+    return alarms.sort(
+      (a, b) => a.alarmTime.getTime() - b.alarmTime.getTime(),
+    );
+  },
+
+  /**
    * 친구 알람 조회
    *
    * ownerId가 친구 uid와 같은 알람을 조회한다.
@@ -279,7 +308,14 @@ export const AlarmService = {
    * 알람 생성
    *
    * Firestore alarms 컬렉션에 새 알람을 저장한다.
-   * NotificationService 연동 후에는 알림 예약 후 notificationId도 함께 저장할 예정이다.
+   *
+   * 내 알람 생성:
+   * ownerId = currentUser.uid
+   * creatorId = currentUser.uid
+   *
+   * 친구 알람 생성:
+   * ownerId = friend.uid
+   * creatorId = currentUser.uid
    */
   async createAlarm(data: CreateAlarmInput): Promise<Alarm> {
     validateCreateAlarmInput(data);
