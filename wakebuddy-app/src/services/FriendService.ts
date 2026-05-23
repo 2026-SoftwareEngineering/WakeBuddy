@@ -1,68 +1,190 @@
+import {
+  Timestamp,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from "firebase/firestore";
+import { db } from "../firebase/firebaseConfig";
 import { Friendship } from "../models/Friendship";
 import { User } from "../models/User";
 
-// 임시 데이터 (Firebase 연동 전)
-const mockFriendships: Friendship[] = [];
-// Firebase 연동 전 친구 추가 테스트용 임시 사용자 데이터
-// Firebase 연동 후에는 Firestore users 컬렉션 조회로 대체 예정
-const mockUsers: User[] = [
-  {
-    uid: "friend-1",
-    email: "friend@test.com",
-    displayName: "테스트 친구",
-    createdAt: new Date(),
-  },
-];
+const USERS_COLLECTION = "users";
+const FRIENDSHIPS_COLLECTION = "friendships";
+
+/**
+ * Firestore Timestamp 또는 Date 값을 Date 타입으로 변환한다.
+ */
+function toDate(value: unknown): Date {
+  if (value instanceof Timestamp) {
+    return value.toDate();
+  }
+
+  if (value instanceof Date) {
+    return value;
+  }
+
+  return new Date();
+}
+
+/**
+ * Firestore users 컬렉션 문서를 앱의 User 타입으로 변환한다.
+ */
+function mapUserDocument(uid: string, data: any): User {
+  return {
+    uid,
+    email: data.email ?? "",
+    displayName: data.displayName ?? "",
+    createdAt: toDate(data.createdAt),
+  };
+}
+
+/**
+ * Firestore friendships 컬렉션 문서를 앱의 Friendship 타입으로 변환한다.
+ */
+function mapFriendshipDocument(friendshipId: string, data: any): Friendship {
+  return {
+    friendshipId,
+    userIds: data.userIds ?? [],
+    createdBy: data.createdBy ?? "",
+    createdAt: toDate(data.createdAt),
+  };
+}
 
 export const FriendService = {
-  // 친구 목록 조회
+  /**
+   * 친구 목록 조회
+   *
+   * friendships 컬렉션에서 userIds 배열에 현재 사용자 uid가 포함된 문서를 조회한다.
+   * 그 후 userIds 배열에서 현재 사용자가 아닌 uid를 찾아 users 컬렉션에서 친구 정보를 불러온다.
+   */
   async getFriends(userId: string): Promise<User[]> {
-    const friendships = mockFriendships.filter((f) => f.userId === userId);
+    if (!userId) {
+      throw new Error("사용자 정보가 없습니다.");
+    }
 
-    const friends = friendships
-      .map((f) => mockUsers.find((u) => u.uid === f.friendId))
-      .filter((u): u is User => u !== undefined);
+    const friendshipQuery = query(
+      collection(db, FRIENDSHIPS_COLLECTION),
+      where("userIds", "array-contains", userId),
+    );
+
+    const snapshot = await getDocs(friendshipQuery);
+
+    const friendships = snapshot.docs.map((friendshipDoc) =>
+      mapFriendshipDocument(friendshipDoc.id, friendshipDoc.data()),
+    );
+
+    const friends: User[] = [];
+
+    for (const friendship of friendships) {
+      const friendId = friendship.userIds.find((id) => id !== userId);
+
+      if (!friendId) {
+        continue;
+      }
+
+      const friendDoc = await getDoc(doc(db, USERS_COLLECTION, friendId));
+
+      if (friendDoc.exists()) {
+        friends.push(mapUserDocument(friendDoc.id, friendDoc.data()));
+      }
+    }
 
     return friends;
   },
 
-  // 친구 추가
-  async addFriend(userId: string, friendEmail: string): Promise<Friendship> {
-    // 친구 이메일로 사용자 찾기
-    const friendUser = mockUsers.find((u) => u.email === friendEmail);
-    if (!friendUser) {
-      throw new Error("해당 이메일의 사용자를 찾을 수 없습니다.");
+  /**
+   * 친구 여부 확인
+   *
+   * 현재 사용자와 대상 사용자가 friendships 컬렉션에 친구 관계로 저장되어 있는지 확인한다.
+   */
+  async isFriend(userId: string, friendId: string): Promise<boolean> {
+    if (!userId || !friendId) {
+      return false;
     }
 
-    // 이미 친구인지 확인
-    const already = mockFriendships.find(
-      (f) => f.userId === userId && f.friendId === friendUser.uid,
+    const friendshipQuery = query(
+      collection(db, FRIENDSHIPS_COLLECTION),
+      where("userIds", "array-contains", userId),
     );
-    if (already) {
-      throw new Error("이미 친구로 등록된 사용자입니다.");
-    }
 
-    const newFriendship: Friendship = {
-      friendshipId: Date.now().toString(),
-      userId,
-      friendId: friendUser.uid,
-      createdAt: new Date(),
-    };
+    const snapshot = await getDocs(friendshipQuery);
 
-    mockFriendships.push(newFriendship);
-    return newFriendship;
+    return snapshot.docs.some((friendshipDoc) => {
+      const data = friendshipDoc.data();
+      const userIds = data.userIds ?? [];
+
+      return userIds.includes(friendId);
+    });
   },
 
-  // 친구 삭제
+  /**
+   * 친구 삭제
+   *
+   * 현재 사용자와 friendId가 함께 포함된 friendship 문서를 찾아 삭제한다.
+   */
   async removeFriend(userId: string, friendId: string): Promise<void> {
-  const index = mockFriendships.findIndex(
-    (f) => f.userId === userId && f.friendId === friendId,
-  );
+    if (!userId) {
+      throw new Error("사용자 정보가 없습니다.");
+    }
 
-  if (index === -1) {
-    throw new Error("친구 관계를 찾을 수 없습니다.");
-  }
+    if (!friendId) {
+      throw new Error("삭제할 친구 정보가 없습니다.");
+    }
 
-  mockFriendships.splice(index, 1);
+    const friendshipQuery = query(
+      collection(db, FRIENDSHIPS_COLLECTION),
+      where("userIds", "array-contains", userId),
+    );
+
+    const snapshot = await getDocs(friendshipQuery);
+
+    const targetDoc = snapshot.docs.find((friendshipDoc) => {
+      const data = friendshipDoc.data();
+      const userIds = data.userIds ?? [];
+
+      return userIds.includes(friendId);
+    });
+
+    if (!targetDoc) {
+      throw new Error("친구 관계를 찾을 수 없습니다.");
+    }
+
+    await deleteDoc(doc(db, FRIENDSHIPS_COLLECTION, targetDoc.id));
+  },
+
+  /**
+   * 친구 관계 생성
+   *
+   * 친구 요청을 수락했을 때 FriendRequestService에서 호출한다.
+   * 이미 친구 관계가 존재하면 중복 생성하지 않는다.
+   */
+  async createFriendship(
+    userId: string,
+    friendId: string,
+    createdBy: string,
+  ): Promise<void> {
+    if (!userId || !friendId) {
+      throw new Error("친구 관계를 만들 사용자 정보가 없습니다.");
+    }
+
+    const alreadyFriend = await this.isFriend(userId, friendId);
+
+    if (alreadyFriend) {
+      return;
+    }
+
+    const friendshipRef = doc(collection(db, FRIENDSHIPS_COLLECTION));
+
+    await setDoc(friendshipRef, {
+      userIds: [userId, friendId],
+      createdBy,
+      createdAt: serverTimestamp(),
+    });
   },
 };
