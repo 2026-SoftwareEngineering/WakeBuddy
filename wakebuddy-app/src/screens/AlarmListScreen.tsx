@@ -9,35 +9,53 @@ import {
   View,
 } from "react-native";
 import { Alarm } from "../models/Alarm";
+import { User } from "../models/User";
 import { AlarmService } from "../services/AlarmService";
-import { AuthService } from "../services/AuthService";
-
-const DEMO_USER_ID = "demo-user";
 
 type Props = {
-  goHome: () => void;
+  currentUser: User;
   goCreateAlarm: () => void;
   goEditAlarm: (alarmId: string) => void;
 };
 
-export default function MyAlarmScreen({
-  goHome,
+/**
+ * 내 알람 목록 화면
+ *
+ * Firestore에서 ownerId가 현재 사용자 uid인 알람을 조회한다.
+ */
+export default function AlarmListScreen({
+  currentUser,
   goCreateAlarm,
   goEditAlarm,
 }: Props) {
   const [alarms, setAlarms] = useState<Alarm[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const getUserId = () => AuthService.getCurrentUser()?.uid ?? DEMO_USER_ID;
-
+  /**
+   * 현재 사용자의 알람 목록을 불러온다.
+   */
   const loadAlarms = async () => {
-    const data = await AlarmService.getMyAlarms(getUserId());
-    setAlarms(data);
+    try {
+      setIsLoading(true);
+      const data = await AlarmService.getMyAlarms(currentUser.uid);
+      setAlarms(data);
+    } catch (error) {
+      Alert.alert(
+        "알람 조회 실패",
+        error instanceof Error ? error.message : "오류가 발생했습니다.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     loadAlarms();
   }, []);
 
+  /**
+   * 알람 삭제
+   */
   const handleDelete = async (alarmId: string) => {
     try {
       await AlarmService.deleteAlarm(alarmId);
@@ -50,22 +68,51 @@ export default function MyAlarmScreen({
     }
   };
 
+  /**
+   * 알람 활성화/비활성화
+   */
   const handleToggle = async (alarmId: string, isActive: boolean) => {
     try {
       await AlarmService.toggleAlarm(alarmId, isActive);
       await loadAlarms();
     } catch (error) {
       Alert.alert(
-        "변경 실패",
+        "상태 변경 실패",
         error instanceof Error ? error.message : "오류가 발생했습니다.",
       );
     }
   };
 
+  /**
+   * 날짜와 시간을 화면에 표시하기 위한 문자열로 변환한다.
+   */
+  const formatAlarmDateTime = (alarm: Alarm) => {
+    const date = alarm.alarmDate.toLocaleDateString();
+    const time = alarm.alarmTime.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    return `${date} ${time}`;
+  };
+
+  /**
+   * 반복 설정을 화면에 표시한다.
+   */
+  const formatRepeat = (alarm: Alarm) => {
+    if (alarm.repeatType === "none") return "반복 없음";
+    if (alarm.repeatType === "daily") return "매일 반복";
+    return `요일 반복: ${alarm.repeatDays.join(", ")}`;
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>내 알람</Text>
+        <View>
+          <Text style={styles.title}>내 알람</Text>
+          <Text style={styles.subtitle}>{currentUser.displayName}님의 알람</Text>
+        </View>
+
         <TouchableOpacity style={styles.addButton} onPress={goCreateAlarm}>
           <Text style={styles.addButtonText}>+ 추가</Text>
         </TouchableOpacity>
@@ -73,23 +120,28 @@ export default function MyAlarmScreen({
 
       <FlatList
         data={alarms}
+        refreshing={isLoading}
+        onRefresh={loadAlarms}
         keyExtractor={(item) => item.alarmId}
         ListEmptyComponent={
           <Text style={styles.empty}>등록된 알람이 없습니다.</Text>
         }
         renderItem={({ item }) => (
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.alarmTitle}>{item.title}</Text>
+            <View style={styles.cardTop}>
+              <View style={styles.cardTitleBox}>
+                <Text style={styles.alarmTitle}>{item.title}</Text>
+                <Text style={styles.alarmTime}>
+                  {formatAlarmDateTime(item)}
+                </Text>
+                <Text style={styles.repeatText}>{formatRepeat(item)}</Text>
+              </View>
+
               <Switch
                 value={item.isActive}
                 onValueChange={(value) => handleToggle(item.alarmId, value)}
               />
             </View>
-
-            <Text style={styles.time}>
-              {new Date(item.time).toLocaleString()}
-            </Text>
 
             <View style={styles.actions}>
               <TouchableOpacity
@@ -109,10 +161,6 @@ export default function MyAlarmScreen({
           </View>
         )}
       />
-
-      <TouchableOpacity onPress={goHome}>
-        <Text style={styles.backText}>홈으로 돌아가기</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -128,16 +176,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 22,
   },
   title: {
     fontSize: 30,
     fontWeight: "bold",
   },
+  subtitle: {
+    color: "#666",
+    marginTop: 4,
+  },
   addButton: {
     backgroundColor: "#222",
-    paddingVertical: 10,
     paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 10,
   },
   addButtonText: {
@@ -152,33 +204,40 @@ const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
     borderColor: "#ddd",
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
   },
-  cardHeader: {
+  cardTop: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+  },
+  cardTitleBox: {
+    flex: 1,
+    paddingRight: 12,
   },
   alarmTitle: {
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "800",
   },
-  time: {
-    color: "#555",
-    marginTop: 8,
+  alarmTime: {
+    color: "#444",
+    marginTop: 6,
+  },
+  repeatText: {
+    color: "#777",
+    marginTop: 4,
   },
   actions: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 14,
+    marginTop: 16,
   },
   editButton: {
     flex: 1,
-    padding: 10,
-    borderRadius: 8,
     backgroundColor: "#eee",
+    padding: 10,
+    borderRadius: 10,
   },
   editButtonText: {
     textAlign: "center",
@@ -186,18 +245,13 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     flex: 1,
-    padding: 10,
-    borderRadius: 8,
     backgroundColor: "#ffdddd",
+    padding: 10,
+    borderRadius: 10,
   },
   deleteButtonText: {
     textAlign: "center",
     color: "#c00",
     fontWeight: "700",
-  },
-  backText: {
-    marginTop: 20,
-    textAlign: "center",
-    color: "#666",
   },
 });
