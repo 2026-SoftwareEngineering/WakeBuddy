@@ -13,21 +13,33 @@ import AlarmFormScreen from "./src/screens/AlarmFormScreen";
  * 앱 전체 화면 이름
  *
  * 기본 Expo 구조에서는 Expo Router를 사용하지 않으므로,
- * App.tsx에서 현재 화면 상태를 직접 관리한다.
+ * App.tsx에서 현재 보여줄 화면을 state로 관리한다.
  */
 export type ScreenName = "main" | "login" | "signup" | "home" | "alarmForm";
 
 export default function App() {
   const [screen, setScreen] = useState<ScreenName>("main");
+
+  // 현재 로그인한 사용자 정보
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // 알람 수정 시 사용할 알람 ID
   const [editingAlarmId, setEditingAlarmId] = useState<string | null>(null);
+
+  // 친구 알람 생성 시 알람 대상자가 되는 친구 uid
+  const [alarmOwnerId, setAlarmOwnerId] = useState<string | null>(null);
+
+  // 친구 알람 생성 화면에 표시할 친구 이름
+  const [alarmOwnerName, setAlarmOwnerName] = useState<string | null>(null);
+
+  // Firebase 로그인 상태 확인 중인지 여부
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   /**
    * 앱 실행 시 Firebase 로그인 상태를 감지한다.
    *
-   * 이미 로그인된 사용자가 있으면 로그인 후 홈 화면으로 이동하고,
-   * 로그인된 사용자가 없으면 Main 화면을 보여준다.
+   * 이미 로그인된 사용자가 있으면 홈 화면으로 이동하고,
+   * 로그인된 사용자가 없으면 로그인/회원가입 Main 화면을 보여준다.
    */
   useEffect(() => {
     const unsubscribe = AuthService.watchAuthState((user) => {
@@ -45,23 +57,46 @@ export default function App() {
   }, []);
 
   /**
-   * 알람 생성 화면으로 이동한다.
+   * 내 알람 생성 화면으로 이동한다.
+   *
+   * 내 알람 생성이므로 alarmOwnerId는 비워둔다.
+   * AlarmFormScreen에서는 alarmOwnerId가 없으면 currentUser.uid를 ownerId로 사용한다.
    */
   const goCreateAlarm = () => {
     setEditingAlarmId(null);
+    setAlarmOwnerId(null);
+    setAlarmOwnerName(null);
+    setScreen("alarmForm");
+  };
+
+  /**
+   * 친구 알람 생성 화면으로 이동한다.
+   *
+   * 친구 알람은 ownerId가 친구 uid이고,
+   * creatorId가 현재 로그인한 사용자 uid가 된다.
+   */
+  const goCreateFriendAlarm = (friendId: string, friendName: string) => {
+    setEditingAlarmId(null);
+    setAlarmOwnerId(friendId);
+    setAlarmOwnerName(friendName);
     setScreen("alarmForm");
   };
 
   /**
    * 알람 수정 화면으로 이동한다.
+   *
+   * 수정은 기존 알람을 불러와서 수정하는 흐름이므로
+   * alarmOwnerId는 따로 설정하지 않는다.
    */
   const goEditAlarm = (alarmId: string) => {
     setEditingAlarmId(alarmId);
+    setAlarmOwnerId(null);
+    setAlarmOwnerName(null);
     setScreen("alarmForm");
   };
 
   /**
-   * Firebase 로그인 상태 확인 중 표시할 로딩 화면
+   * 로그인 상태 확인 중 보여줄 로딩 화면
    */
   if (isAuthLoading) {
     return (
@@ -94,6 +129,7 @@ export default function App() {
       <AppHomeScreen
         currentUser={currentUser}
         goCreateAlarm={goCreateAlarm}
+        goCreateFriendAlarm={goCreateFriendAlarm}
         goEditAlarm={goEditAlarm}
       />
     );
@@ -104,6 +140,8 @@ export default function App() {
       <AlarmFormScreen
         currentUser={currentUser}
         alarmId={editingAlarmId}
+        alarmOwnerId={alarmOwnerId}
+        alarmOwnerName={alarmOwnerName}
         goBack={() => setScreen("home")}
       />
     );

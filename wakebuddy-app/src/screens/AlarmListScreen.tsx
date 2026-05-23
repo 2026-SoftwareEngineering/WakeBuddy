@@ -18,27 +18,59 @@ type Props = {
   goEditAlarm: (alarmId: string) => void;
 };
 
+type AlarmViewMode = "my" | "createdForFriends";
+
 /**
  * 내 알람 목록 화면
  *
- * Firestore에서 ownerId가 현재 사용자 uid인 알람을 조회한다.
+ * 내 알람과 내가 만든 친구 알람을 구분해서 조회한다.
+ *
+ * 내 알람:
+ * - ownerId가 현재 사용자 uid인 알람
+ *
+ * 내가 만든 친구 알람:
+ * - creatorId가 현재 사용자 uid이고
+ * - ownerId가 현재 사용자 uid가 아닌 알람
  */
 export default function AlarmListScreen({
   currentUser,
   goCreateAlarm,
   goEditAlarm,
 }: Props) {
-  const [alarms, setAlarms] = useState<Alarm[]>([]);
+  const [viewMode, setViewMode] = useState<AlarmViewMode>("my");
+
+  const [myAlarms, setMyAlarms] = useState<Alarm[]>([]);
+  const [createdFriendAlarms, setCreatedFriendAlarms] = useState<Alarm[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   /**
    * 현재 사용자의 알람 목록을 불러온다.
+   *
+   * getMyAlarms:
+   * - ownerId가 현재 사용자 uid인 알람 조회
+   *
+   * getCreatedAlarms:
+   * - creatorId가 현재 사용자 uid인 알람 조회
+   *
+   * createdFriendAlarms:
+   * - 내가 생성했지만 대상자가 내가 아닌 알람
+   * - 즉, 내가 친구에게 만들어준 알람
    */
   const loadAlarms = async () => {
     try {
       setIsLoading(true);
-      const data = await AlarmService.getMyAlarms(currentUser.uid);
-      setAlarms(data);
+
+      const myAlarmData = await AlarmService.getMyAlarms(currentUser.uid);
+      const createdAlarmData = await AlarmService.getCreatedAlarms(
+        currentUser.uid,
+      );
+
+      const friendAlarmData = createdAlarmData.filter(
+        (alarm) => alarm.ownerId !== currentUser.uid,
+      );
+
+      setMyAlarms(myAlarmData);
+      setCreatedFriendAlarms(friendAlarmData);
     } catch (error) {
       Alert.alert(
         "알람 조회 실패",
@@ -52,6 +84,12 @@ export default function AlarmListScreen({
   useEffect(() => {
     loadAlarms();
   }, []);
+
+  /**
+   * 현재 선택된 탭에 따라 표시할 알람 목록을 결정한다.
+   */
+  const alarms =
+    viewMode === "my" ? myAlarms : createdFriendAlarms;
 
   /**
    * 알람 삭제
@@ -100,21 +138,75 @@ export default function AlarmListScreen({
    * 반복 설정을 화면에 표시한다.
    */
   const formatRepeat = (alarm: Alarm) => {
-    if (alarm.repeatType === "none") return "반복 없음";
-    if (alarm.repeatType === "daily") return "매일 반복";
+    if (alarm.repeatType === "none") {
+      return "반복 없음";
+    }
+
+    if (alarm.repeatType === "daily") {
+      return "매일 반복";
+    }
+
     return `요일 반복: ${alarm.repeatDays.join(", ")}`;
+  };
+
+  /**
+   * 현재 탭의 빈 목록 문구를 반환한다.
+   */
+  const getEmptyText = () => {
+    if (viewMode === "my") {
+      return "등록된 내 알람이 없습니다.";
+    }
+
+    return "내가 만든 친구 알람이 없습니다.";
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>내 알람</Text>
+          <Text style={styles.title}>알람</Text>
           <Text style={styles.subtitle}>{currentUser.displayName}님의 알람</Text>
         </View>
 
         <TouchableOpacity style={styles.addButton} onPress={goCreateAlarm}>
-          <Text style={styles.addButtonText}>+ 추가</Text>
+          <Text style={styles.addButtonText}>+ 내 알람</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.modeRow}>
+        <TouchableOpacity
+          style={[
+            styles.modeButton,
+            viewMode === "my" && styles.activeModeButton,
+          ]}
+          onPress={() => setViewMode("my")}
+        >
+          <Text
+            style={[
+              styles.modeButtonText,
+              viewMode === "my" && styles.activeModeButtonText,
+            ]}
+          >
+            내 알람
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.modeButton,
+            viewMode === "createdForFriends" && styles.activeModeButton,
+          ]}
+          onPress={() => setViewMode("createdForFriends")}
+        >
+          <Text
+            style={[
+              styles.modeButtonText,
+              viewMode === "createdForFriends" &&
+                styles.activeModeButtonText,
+            ]}
+          >
+            내가 만든 친구 알람
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -123,17 +215,30 @@ export default function AlarmListScreen({
         refreshing={isLoading}
         onRefresh={loadAlarms}
         keyExtractor={(item) => item.alarmId}
-        ListEmptyComponent={
-          <Text style={styles.empty}>등록된 알람이 없습니다.</Text>
-        }
+        ListEmptyComponent={<Text style={styles.empty}>{getEmptyText()}</Text>}
         renderItem={({ item }) => (
           <View style={styles.card}>
             <View style={styles.cardTop}>
               <View style={styles.cardTitleBox}>
                 <Text style={styles.alarmTitle}>{item.title}</Text>
+
+                {item.ownerId !== currentUser.uid && (
+                  <Text style={styles.friendAlarmBadge}>
+                    친구에게 만든 알람
+                  </Text>
+                )}
+
+                {item.ownerId === currentUser.uid &&
+                  item.creatorId !== currentUser.uid && (
+                    <Text style={styles.friendAlarmBadge}>
+                      친구가 나에게 설정한 알람
+                    </Text>
+                  )}
+
                 <Text style={styles.alarmTime}>
                   {formatAlarmDateTime(item)}
                 </Text>
+
                 <Text style={styles.repeatText}>{formatRepeat(item)}</Text>
               </View>
 
@@ -176,7 +281,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 22,
+    marginBottom: 18,
   },
   title: {
     fontSize: 30,
@@ -195,6 +300,30 @@ const styles = StyleSheet.create({
   addButtonText: {
     color: "#fff",
     fontWeight: "700",
+  },
+  modeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 18,
+  },
+  modeButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    paddingVertical: 11,
+    borderRadius: 10,
+  },
+  activeModeButton: {
+    backgroundColor: "#222",
+    borderColor: "#222",
+  },
+  modeButtonText: {
+    textAlign: "center",
+    color: "#333",
+    fontWeight: "700",
+  },
+  activeModeButtonText: {
+    color: "#fff",
   },
   empty: {
     textAlign: "center",
@@ -219,6 +348,11 @@ const styles = StyleSheet.create({
   alarmTitle: {
     fontSize: 18,
     fontWeight: "800",
+  },
+  friendAlarmBadge: {
+    marginTop: 6,
+    color: "#244a99",
+    fontWeight: "700",
   },
   alarmTime: {
     color: "#444",
