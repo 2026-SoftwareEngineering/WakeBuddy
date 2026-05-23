@@ -10,36 +10,32 @@ import {
 import { AuthService } from "../services/AuthService";
 
 type Props = {
-  goHome: () => void;
+  goMain: () => void;
   goSignUp: () => void;
 };
 
-export default function LoginScreen({ goHome, goSignUp }: Props) {
+/**
+ * 로그인 화면
+ *
+ * Firebase Authentication 기반 로그인 기능을 수행한다.
+ */
+export default function LoginScreen({ goMain, goSignUp }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  /**
+   * 로그인 버튼 클릭 시 호출된다.
+   */
   const handleLogin = async () => {
     try {
-      if (!email || !password) {
-        Alert.alert("입력 오류", "이메일과 비밀번호를 입력해주세요.");
-        return;
-      }
-
       await AuthService.login(email, password);
       Alert.alert("로그인 성공", "로그인되었습니다.");
-      goHome();
     } catch (error) {
       Alert.alert(
         "로그인 실패",
         error instanceof Error ? error.message : "오류가 발생했습니다.",
       );
     }
-  };
-
-  const handleLogout = async () => {
-    await AuthService.logout();
-    Alert.alert("로그아웃", "로그아웃되었습니다.");
-    goHome();
   };
 
   return (
@@ -52,6 +48,7 @@ export default function LoginScreen({ goHome, goSignUp }: Props) {
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
+        keyboardType="email-address"
       />
 
       <TextInput
@@ -62,20 +59,16 @@ export default function LoginScreen({ goHome, goSignUp }: Props) {
         secureTextEntry
       />
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>로그인</Text>
+      <TouchableOpacity style={styles.primaryButton} onPress={handleLogin}>
+        <Text style={styles.primaryButtonText}>로그인</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.outlineButton} onPress={goSignUp}>
         <Text style={styles.outlineButtonText}>회원가입으로 이동</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.dangerButton} onPress={handleLogout}>
-        <Text style={styles.dangerButtonText}>로그아웃</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={goHome}>
-        <Text style={styles.backText}>홈으로 돌아가기</Text>
+      <TouchableOpacity onPress={goMain}>
+        <Text style={styles.backText}>처음 화면으로</Text>
       </TouchableOpacity>
     </View>
   );
@@ -96,17 +89,17 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 14,
     marginBottom: 12,
   },
-  button: {
+  primaryButton: {
     backgroundColor: "#222",
     padding: 14,
-    borderRadius: 10,
-    marginTop: 6,
+    borderRadius: 12,
+    marginTop: 8,
   },
-  buttonText: {
+  primaryButtonText: {
     color: "#fff",
     textAlign: "center",
     fontWeight: "700",
@@ -115,7 +108,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#222",
     padding: 14,
-    borderRadius: 10,
+    borderRadius: 12,
     marginTop: 10,
   },
   outlineButtonText: {
@@ -123,20 +116,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontWeight: "700",
   },
-  dangerButton: {
-    backgroundColor: "#ffdddd",
-    padding: 14,
-    borderRadius: 10,
-    marginTop: 10,
-  },
-  dangerButtonText: {
-    color: "#c00",
-    textAlign: "center",
-    fontWeight: "700",
-  },
   backText: {
-    marginTop: 20,
     textAlign: "center",
     color: "#666",
+    marginTop: 20,
   },
 });

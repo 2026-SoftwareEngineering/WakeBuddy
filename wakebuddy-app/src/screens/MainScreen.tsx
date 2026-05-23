@@ -3,31 +3,21 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 type Props = {
   goLogin: () => void;
   goSignUp: () => void;
-  goMyAlarms: () => void;
-  goFriends: () => void;
 };
 
-export default function HomeScreen({
-  goLogin,
-  goSignUp,
-  goMyAlarms,
-  goFriends,
-}: Props) {
+/**
+ * 비로그인 상태의 메인 화면
+ *
+ * 요구사항에 따라 Main 화면에는 로그인과 회원가입 버튼만 표시한다.
+ */
+export default function MainScreen({ goLogin, goSignUp }: Props) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>WakeBuddy</Text>
       <Text style={styles.subtitle}>친구와 함께 관리하는 공유 알람 앱</Text>
 
-      <TouchableOpacity style={styles.button} onPress={goMyAlarms}>
-        <Text style={styles.buttonText}>내 알람 관리</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.button} onPress={goFriends}>
-        <Text style={styles.buttonText}>친구 관리</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.button} onPress={goLogin}>
-        <Text style={styles.buttonText}>로그인</Text>
+      <TouchableOpacity style={styles.primaryButton} onPress={goLogin}>
+        <Text style={styles.primaryButtonText}>로그인</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.outlineButton} onPress={goSignUp}>
@@ -45,39 +35,39 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   title: {
-    fontSize: 36,
+    fontSize: 38,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 8,
+    marginBottom: 10,
   },
   subtitle: {
-    fontSize: 16,
     textAlign: "center",
+    fontSize: 16,
     color: "#666",
-    marginBottom: 40,
+    marginBottom: 44,
   },
-  button: {
+  primaryButton: {
     backgroundColor: "#222",
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
     marginBottom: 12,
   },
-  buttonText: {
+  primaryButtonText: {
     color: "#fff",
     textAlign: "center",
-    fontWeight: "700",
     fontSize: 16,
+    fontWeight: "700",
   },
   outlineButton: {
     borderWidth: 1,
     borderColor: "#222",
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
   },
   outlineButtonText: {
     color: "#222",
     textAlign: "center",
-    fontWeight: "700",
     fontSize: 16,
+    fontWeight: "700",
   },
 });
