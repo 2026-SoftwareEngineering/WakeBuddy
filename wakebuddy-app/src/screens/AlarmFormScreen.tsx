@@ -15,10 +15,21 @@ import {
 import { Alarm, RepeatType, Weekday } from "../models/Alarm";
 import { User } from "../models/User";
 import { AlarmService } from "../services/AlarmService";
+import { PermissionService } from "../services/PermissionService";
 
 type Props = {
   currentUser: User;
+
+  // 수정 모드일 경우 사용되는 알람 ID
   alarmId: string | null;
+
+  // 친구 알람 생성 시 대상 친구 uid
+  alarmOwnerId: string | null;
+
+  // 친구 알람 생성 시 화면에 표시할 친구 이름
+  alarmOwnerName: string | null;
+
+  // 이전 화면으로 돌아가기
   goBack: () => void;
 };
 
@@ -35,11 +46,21 @@ const WEEKDAYS: { label: string; value: Weekday }[] = [
 /**
  * 알람 생성/수정 화면
  *
- * 실제 알람 앱처럼 날짜, 시간, 반복 여부, 요일을 선택할 수 있다.
+ * 내 알람 생성과 친구 알람 생성을 모두 처리한다.
+ *
+ * 내 알람 생성:
+ * - ownerId = currentUser.uid
+ * - creatorId = currentUser.uid
+ *
+ * 친구 알람 생성:
+ * - ownerId = alarmOwnerId
+ * - creatorId = currentUser.uid
  */
 export default function AlarmFormScreen({
   currentUser,
   alarmId,
+  alarmOwnerId,
+  alarmOwnerName,
   goBack,
 }: Props) {
   const [targetAlarm, setTargetAlarm] = useState<Alarm | null>(null);
@@ -92,7 +113,10 @@ export default function AlarmFormScreen({
   /**
    * 날짜 선택 결과를 반영한다.
    */
-  const handleDateChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
+  const handleDateChange = (
+    _event: DateTimePickerEvent,
+    selectedDate?: Date,
+  ) => {
     setShowDatePicker(false);
 
     if (selectedDate) {
@@ -103,7 +127,10 @@ export default function AlarmFormScreen({
   /**
    * 시간 선택 결과를 반영한다.
    */
-  const handleTimeChange = (_event: DateTimePickerEvent, selectedTime?: Date) => {
+  const handleTimeChange = (
+    _event: DateTimePickerEvent,
+    selectedTime?: Date,
+  ) => {
     setShowTimePicker(false);
 
     if (selectedTime) {
@@ -127,7 +154,8 @@ export default function AlarmFormScreen({
   /**
    * 반복 유형을 변경한다.
    *
-   * 반복 없음 또는 매일 반복을 선택하면 요일 선택값은 초기화한다.
+   * 반복 없음 또는 매일 반복을 선택하면
+   * 요일 선택값은 필요 없으므로 초기화한다.
    */
   const handleRepeatTypeChange = (nextRepeatType: RepeatType) => {
     setRepeatType(nextRepeatType);
@@ -138,10 +166,29 @@ export default function AlarmFormScreen({
   };
 
   /**
+   * 화면 제목을 결정한다.
+   */
+  const getTitleText = () => {
+    if (targetAlarm) {
+      return "알람 수정";
+    }
+
+    if (alarmOwnerName) {
+      return `${alarmOwnerName}님 알람 생성`;
+    }
+
+    return "내 알람 생성";
+  };
+
+  /**
    * 알람 저장
    *
-   * 생성 모드면 createAlarm,
-   * 수정 모드면 updateAlarm을 호출한다.
+   * 수정 모드:
+   * - 기존 알람을 수정한다.
+   *
+   * 생성 모드:
+   * - alarmOwnerId가 있으면 친구 알람을 생성한다.
+   * - alarmOwnerId가 없으면 내 알람을 생성한다.
    */
   const handleSave = async () => {
     try {
@@ -156,21 +203,34 @@ export default function AlarmFormScreen({
         });
 
         Alert.alert("수정 완료", "알람이 수정되었습니다.");
-      } else {
-        await AlarmService.createAlarm({
-          ownerId: currentUser.uid,
-          creatorId: currentUser.uid,
-          title,
-          alarmDate,
-          alarmTime,
-          repeatType,
-          repeatDays,
-          isActive,
-        });
-
-        Alert.alert("생성 완료", "알람이 생성되었습니다.");
+        goBack();
+        return;
       }
 
+      const targetOwnerId = alarmOwnerId ?? currentUser.uid;
+
+      const canCreate = await PermissionService.canCreateAlarmForUser(
+        currentUser.uid,
+        targetOwnerId,
+      );
+
+      if (!canCreate) {
+        Alert.alert("권한 없음", "친구에게 알람을 생성할 권한이 없습니다.");
+        return;
+      }
+
+      await AlarmService.createAlarm({
+        ownerId: targetOwnerId,
+        creatorId: currentUser.uid,
+        title,
+        alarmDate,
+        alarmTime,
+        repeatType,
+        repeatDays,
+        isActive,
+      });
+
+      Alert.alert("생성 완료", "알람이 생성되었습니다.");
       goBack();
     } catch (error) {
       Alert.alert(
@@ -182,7 +242,13 @@ export default function AlarmFormScreen({
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>{targetAlarm ? "알람 수정" : "알람 생성"}</Text>
+      <Text style={styles.title}>{getTitleText()}</Text>
+
+      {alarmOwnerName && !targetAlarm && (
+        <Text style={styles.targetNotice}>
+          이 알람은 {alarmOwnerName}님에게 설정됩니다.
+        </Text>
+      )}
 
       <Text style={styles.label}>알람 제목</Text>
       <TextInput
@@ -342,7 +408,15 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 30,
     fontWeight: "bold",
-    marginBottom: 24,
+    marginBottom: 10,
+  },
+  targetNotice: {
+    backgroundColor: "#eef3ff",
+    color: "#244a99",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 16,
+    lineHeight: 20,
   },
   label: {
     fontSize: 15,

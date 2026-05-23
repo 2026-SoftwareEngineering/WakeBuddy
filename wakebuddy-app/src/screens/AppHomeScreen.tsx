@@ -9,18 +9,26 @@ type HomeTab = "alarm" | "friend" | "settings";
 
 type Props = {
   currentUser: User;
+
+  // 내 알람 생성 화면으로 이동
   goCreateAlarm: () => void;
+
+  // 친구 알람 생성 화면으로 이동
+  goCreateFriendAlarm: (friendId: string, friendName: string) => void;
+
+  // 알람 수정 화면으로 이동
   goEditAlarm: (alarmId: string) => void;
 };
 
 /**
  * 로그인 후 보이는 앱 홈 화면
  *
- * 하단 탭 형태로 알람, 친구, 설정 화면을 전환한다.
+ * 하단 탭으로 알람, 친구, 설정 화면을 전환한다.
  */
 export default function AppHomeScreen({
   currentUser,
   goCreateAlarm,
+  goCreateFriendAlarm,
   goEditAlarm,
 }: Props) {
   const [tab, setTab] = useState<HomeTab>("alarm");
@@ -36,19 +44,30 @@ export default function AppHomeScreen({
           />
         )}
 
-        {tab === "friend" && <FriendTabScreen currentUser={currentUser} />}
+        {tab === "friend" && (
+          <FriendTabScreen
+            currentUser={currentUser}
+            goCreateFriendAlarm={goCreateFriendAlarm}
+          />
+        )}
 
         {tab === "settings" && <SettingsScreen currentUser={currentUser} />}
       </View>
 
       <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabButton} onPress={() => setTab("alarm")}>
+        <TouchableOpacity
+          style={styles.tabButton}
+          onPress={() => setTab("alarm")}
+        >
           <Text style={[styles.tabText, tab === "alarm" && styles.activeTab]}>
             알람
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.tabButton} onPress={() => setTab("friend")}>
+        <TouchableOpacity
+          style={styles.tabButton}
+          onPress={() => setTab("friend")}
+        >
           <Text style={[styles.tabText, tab === "friend" && styles.activeTab]}>
             친구
           </Text>
@@ -58,7 +77,9 @@ export default function AppHomeScreen({
           style={styles.tabButton}
           onPress={() => setTab("settings")}
         >
-          <Text style={[styles.tabText, tab === "settings" && styles.activeTab]}>
+          <Text
+            style={[styles.tabText, tab === "settings" && styles.activeTab]}
+          >
             설정
           </Text>
         </TouchableOpacity>

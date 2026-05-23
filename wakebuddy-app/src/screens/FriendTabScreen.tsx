@@ -17,17 +17,26 @@ type FriendTabMode = "list" | "add" | "sent" | "received";
 
 type Props = {
   currentUser: User;
+
+  // 친구 알람 생성 화면으로 이동하는 함수
+  goCreateFriendAlarm: (friendId: string, friendName: string) => void;
 };
 
 /**
  * 친구 탭 화면
  *
  * 친구 목록, 친구 추가, 보낸 요청 현황, 받은 요청함을 관리한다.
+ * 친구 목록에서는 친구에게 알람을 생성할 수 있는 버튼도 제공한다.
  */
-export default function FriendTabScreen({ currentUser }: Props) {
+export default function FriendTabScreen({
+  currentUser,
+  goCreateFriendAlarm,
+}: Props) {
   const [mode, setMode] = useState<FriendTabMode>("list");
+
   const [friends, setFriends] = useState<User[]>([]);
   const [friendEmail, setFriendEmail] = useState("");
+
   const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
   const [receivedRequests, setReceivedRequests] = useState<FriendRequest[]>([]);
 
@@ -51,18 +60,28 @@ export default function FriendTabScreen({ currentUser }: Props) {
    * 받은 친구 요청 조회
    */
   const loadReceivedRequests = async () => {
-    const data = await FriendRequestService.getReceivedRequests(currentUser.uid);
+    const data = await FriendRequestService.getReceivedRequests(
+      currentUser.uid,
+    );
     setReceivedRequests(data);
   };
 
   /**
-   * 현재 선택된 탭에 맞는 데이터를 조회한다.
+   * 현재 선택된 화면 모드에 맞게 데이터를 조회한다.
    */
   const loadDataByMode = async () => {
     try {
-      if (mode === "list") await loadFriends();
-      if (mode === "sent") await loadSentRequests();
-      if (mode === "received") await loadReceivedRequests();
+      if (mode === "list") {
+        await loadFriends();
+      }
+
+      if (mode === "sent") {
+        await loadSentRequests();
+      }
+
+      if (mode === "received") {
+        await loadReceivedRequests();
+      }
     } catch (error) {
       Alert.alert(
         "조회 실패",
@@ -77,6 +96,9 @@ export default function FriendTabScreen({ currentUser }: Props) {
 
   /**
    * 친구 요청 보내기
+   *
+   * 입력한 이메일의 사용자에게 친구 요청을 보낸다.
+   * 바로 친구가 되는 것이 아니라 pending 상태의 요청이 생성된다.
    */
   const handleSendRequest = async () => {
     try {
@@ -117,6 +139,9 @@ export default function FriendTabScreen({ currentUser }: Props) {
 
   /**
    * 받은 친구 요청 수락
+   *
+   * 수락하면 friendRequests 상태가 accepted가 되고,
+   * friendships 컬렉션에 친구 관계가 생성된다.
    */
   const handleAcceptRequest = async (requestId: string) => {
     try {
@@ -174,23 +199,54 @@ export default function FriendTabScreen({ currentUser }: Props) {
       <Text style={styles.title}>친구</Text>
 
       <View style={styles.menuRow}>
-        <TouchableOpacity style={styles.menuButton} onPress={() => setMode("list")}>
-          <Text style={styles.menuText}>친구 목록</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuButton} onPress={() => setMode("add")}>
-          <Text style={styles.menuText}>친구 추가</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuButton} onPress={() => setMode("sent")}>
-          <Text style={styles.menuText}>신청 현황</Text>
+        <TouchableOpacity
+          style={[styles.menuButton, mode === "list" && styles.activeMenu]}
+          onPress={() => setMode("list")}
+        >
+          <Text
+            style={[styles.menuText, mode === "list" && styles.activeMenuText]}
+          >
+            친구 목록
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.menuButton}
+          style={[styles.menuButton, mode === "add" && styles.activeMenu]}
+          onPress={() => setMode("add")}
+        >
+          <Text
+            style={[styles.menuText, mode === "add" && styles.activeMenuText]}
+          >
+            친구 추가
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.menuButton, mode === "sent" && styles.activeMenu]}
+          onPress={() => setMode("sent")}
+        >
+          <Text
+            style={[styles.menuText, mode === "sent" && styles.activeMenuText]}
+          >
+            신청 현황
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.menuButton,
+            mode === "received" && styles.activeMenu,
+          ]}
           onPress={() => setMode("received")}
         >
-          <Text style={styles.menuText}>수신함</Text>
+          <Text
+            style={[
+              styles.menuText,
+              mode === "received" && styles.activeMenuText,
+            ]}
+          >
+            수신함
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -198,7 +254,11 @@ export default function FriendTabScreen({ currentUser }: Props) {
         <FlatList
           data={friends}
           keyExtractor={(item) => item.uid}
-          ListEmptyComponent={<Text style={styles.empty}>친구가 없습니다.</Text>}
+          onRefresh={loadFriends}
+          refreshing={false}
+          ListEmptyComponent={
+            <Text style={styles.empty}>등록된 친구가 없습니다.</Text>
+          }
           renderItem={({ item }) => (
             <View style={styles.card}>
               <View>
@@ -206,12 +266,23 @@ export default function FriendTabScreen({ currentUser }: Props) {
                 <Text style={styles.cardSub}>{item.email}</Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.dangerButton}
-                onPress={() => handleRemoveFriend(item.uid)}
-              >
-                <Text style={styles.dangerText}>삭제</Text>
-              </TouchableOpacity>
+              <View style={styles.friendActions}>
+                <TouchableOpacity
+                  style={styles.primarySmallButton}
+                  onPress={() =>
+                    goCreateFriendAlarm(item.uid, item.displayName)
+                  }
+                >
+                  <Text style={styles.primarySmallButtonText}>알람 생성</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.dangerSmallButton}
+                  onPress={() => handleRemoveFriend(item.uid)}
+                >
+                  <Text style={styles.dangerText}>삭제</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         />
@@ -220,6 +291,7 @@ export default function FriendTabScreen({ currentUser }: Props) {
       {mode === "add" && (
         <View>
           <Text style={styles.label}>친구 이메일</Text>
+
           <TextInput
             style={styles.input}
             placeholder="친구 이메일 입력"
@@ -229,7 +301,10 @@ export default function FriendTabScreen({ currentUser }: Props) {
             keyboardType="email-address"
           />
 
-          <TouchableOpacity style={styles.primaryButton} onPress={handleSendRequest}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleSendRequest}
+          >
             <Text style={styles.primaryButtonText}>친구 요청 보내기</Text>
           </TouchableOpacity>
         </View>
@@ -239,6 +314,8 @@ export default function FriendTabScreen({ currentUser }: Props) {
         <FlatList
           data={sentRequests}
           keyExtractor={(item) => item.requestId}
+          onRefresh={loadSentRequests}
+          refreshing={false}
           ListEmptyComponent={
             <Text style={styles.empty}>보낸 친구 요청이 없습니다.</Text>
           }
@@ -252,10 +329,10 @@ export default function FriendTabScreen({ currentUser }: Props) {
 
               {item.status === "pending" && (
                 <TouchableOpacity
-                  style={styles.dangerButton}
+                  style={styles.dangerSmallButton}
                   onPress={() => handleCancelRequest(item.requestId)}
                 >
-                  <Text style={styles.dangerText}>취소</Text>
+                  <Text style={styles.dangerText}>요청 취소</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -267,6 +344,8 @@ export default function FriendTabScreen({ currentUser }: Props) {
         <FlatList
           data={receivedRequests}
           keyExtractor={(item) => item.requestId}
+          onRefresh={loadReceivedRequests}
+          refreshing={false}
           ListEmptyComponent={
             <Text style={styles.empty}>받은 친구 요청이 없습니다.</Text>
           }
@@ -288,7 +367,7 @@ export default function FriendTabScreen({ currentUser }: Props) {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.dangerButton}
+                    style={styles.dangerSmallButton}
                     onPress={() => handleRejectRequest(item.requestId)}
                   >
                     <Text style={styles.dangerText}>거절</Text>
@@ -327,8 +406,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
   },
+  activeMenu: {
+    backgroundColor: "#222",
+  },
   menuText: {
     fontWeight: "700",
+    color: "#333",
+  },
+  activeMenuText: {
+    color: "#fff",
   },
   label: {
     fontWeight: "700",
@@ -375,10 +461,36 @@ const styles = StyleSheet.create({
     color: "#777",
     marginTop: 6,
   },
+  friendActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 14,
+  },
   requestActions: {
     flexDirection: "row",
     gap: 8,
     marginTop: 14,
+  },
+  primarySmallButton: {
+    backgroundColor: "#222",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  primarySmallButtonText: {
+    color: "#fff",
+    fontWeight: "800",
+  },
+  dangerSmallButton: {
+    backgroundColor: "#ffdddd",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+  },
+  dangerText: {
+    color: "#c00",
+    fontWeight: "800",
   },
   acceptButton: {
     backgroundColor: "#ddffdd",
@@ -388,18 +500,6 @@ const styles = StyleSheet.create({
   },
   acceptText: {
     color: "#087a08",
-    fontWeight: "800",
-  },
-  dangerButton: {
-    backgroundColor: "#ffdddd",
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 10,
-    marginTop: 12,
-    alignSelf: "flex-start",
-  },
-  dangerText: {
-    color: "#c00",
     fontWeight: "800",
   },
 });
