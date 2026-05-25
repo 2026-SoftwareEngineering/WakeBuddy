@@ -19,14 +19,12 @@ import {
   UpdateAlarmInput,
   Weekday,
 } from "../models/Alarm";
+import { NotificationService } from "./NotificationService";
 
 const ALARMS_COLLECTION = "alarms";
 
 /**
  * Firestore Timestamp 또는 Date 값을 앱에서 사용하는 Date 타입으로 변환한다.
- *
- * Firestore에는 날짜/시간이 Timestamp로 저장될 수 있고,
- * 앱 내부에서는 Date로 다루는 것이 편하므로 변환 함수로 분리한다.
  */
 function toDate(value: unknown): Date {
   if (value instanceof Timestamp) {
@@ -42,9 +40,6 @@ function toDate(value: unknown): Date {
 
 /**
  * Firestore 문서를 앱에서 사용하는 Alarm 타입으로 변환한다.
- *
- * Firestore 문서 id는 alarmId로 사용하고,
- * 문서 안의 날짜/시간 필드는 Date 타입으로 변환한다.
  */
 function mapAlarmDocument(alarmId: string, data: any): Alarm {
   return {
@@ -52,7 +47,7 @@ function mapAlarmDocument(alarmId: string, data: any): Alarm {
     ownerId: data.ownerId ?? "",
     creatorId: data.creatorId ?? "",
     title: data.title ?? "",
-    alarmDate: toDate(data.alarmDate),
+    alarmDate: data.alarmDate ? toDate(data.alarmDate) : undefined,
     alarmTime: toDate(data.alarmTime),
     repeatType: (data.repeatType ?? "none") as RepeatType,
     repeatDays: (data.repeatDays ?? []) as Weekday[],
@@ -64,10 +59,7 @@ function mapAlarmDocument(alarmId: string, data: any): Alarm {
 }
 
 /**
- * 알람 생성 시 필요한 필수 입력값을 검증한다.
- *
- * createAlarm은 alarmDate, alarmTime이 반드시 필요하므로
- * undefined 상태에서 getTime()을 호출하지 않도록 먼저 존재 여부를 확인한다.
+ * 알람 생성 입력값 검증
  */
 function validateCreateAlarmInput(data: CreateAlarmInput) {
   if (!data.ownerId) {
@@ -80,14 +72,6 @@ function validateCreateAlarmInput(data: CreateAlarmInput) {
 
   if (!data.title?.trim()) {
     throw new Error("알람 제목을 입력해주세요.");
-  }
-
-  if (!data.alarmDate) {
-    throw new Error("알람 날짜를 선택해주세요.");
-  }
-
-  if (Number.isNaN(data.alarmDate.getTime())) {
-    throw new Error("알람 날짜가 올바르지 않습니다.");
   }
 
   if (!data.alarmTime) {
@@ -108,10 +92,7 @@ function validateCreateAlarmInput(data: CreateAlarmInput) {
 }
 
 /**
- * 알람 수정 시 입력값을 검증한다.
- *
- * updateAlarm은 일부 필드만 수정할 수 있으므로,
- * 값이 들어온 필드에 대해서만 검증한다.
+ * 알람 수정 입력값 검증
  */
 function validateUpdateAlarmInput(data: UpdateAlarmInput) {
   if (data.title !== undefined && !data.title.trim()) {
@@ -138,16 +119,14 @@ function validateUpdateAlarmInput(data: UpdateAlarmInput) {
 }
 
 /**
- * 앱의 알람 생성 입력값을 Firestore에 저장 가능한 형태로 변환한다.
- *
- * Date 타입은 Firestore Timestamp로 변환해서 저장한다.
+ * Firestore 저장용 알람 데이터 변환
  */
 function toFirestoreAlarmData(data: CreateAlarmInput) {
   return {
     ownerId: data.ownerId,
     creatorId: data.creatorId,
     title: data.title.trim(),
-    alarmDate: Timestamp.fromDate(data.alarmDate),
+    alarmDate: data.alarmDate ? Timestamp.fromDate(data.alarmDate) : null,
     alarmTime: Timestamp.fromDate(data.alarmTime),
     repeatType: data.repeatType,
     repeatDays: data.repeatDays,
@@ -159,9 +138,7 @@ function toFirestoreAlarmData(data: CreateAlarmInput) {
 }
 
 /**
- * 앱의 알람 수정 입력값을 Firestore 업데이트 데이터로 변환한다.
- *
- * Partial 타입이므로 전달된 필드만 updateData에 넣는다.
+ * Firestore 업데이트용 알람 데이터 변환
  */
 function toFirestoreUpdateData(data: UpdateAlarmInput) {
   const updateData: Record<string, unknown> = {
@@ -199,6 +176,31 @@ function toFirestoreUpdateData(data: UpdateAlarmInput) {
   return updateData;
 }
 
+/**
+ * 알람을 OS 로컬 알림으로 예약하고 Firestore notificationId를 갱신한다.
+ */
+async function scheduleAndSaveNotificationId(alarm: Alarm): Promise<Alarm> {
+  if (!alarm.isActive) {
+    return alarm;
+  }
+
+  const notificationId =
+    await NotificationService.scheduleAlarmNotification(alarm);
+
+  const alarmRef = doc(db, ALARMS_COLLECTION, alarm.alarmId);
+
+  await updateDoc(alarmRef, {
+    notificationId,
+    updatedAt: serverTimestamp(),
+  });
+
+  return {
+    ...alarm,
+    notificationId,
+    updatedAt: new Date(),
+  };
+}
+
 export const AlarmService = {
   /**
    * 내 알람 조회
@@ -223,18 +225,11 @@ export const AlarmService = {
       mapAlarmDocument(alarmDoc.id, alarmDoc.data()),
     );
 
-    return alarms.sort(
-      (a, b) => a.alarmTime.getTime() - b.alarmTime.getTime(),
-    );
+    return alarms.sort((a, b) => a.alarmTime.getTime() - b.alarmTime.getTime());
   },
 
   /**
    * 내가 생성한 알람 조회
-   *
-   * creatorId가 현재 사용자 uid와 같은 알람을 조회한다.
-   *
-   * 이 중 ownerId가 현재 사용자 uid와 다른 알람은
-   * 내가 친구에게 만들어준 친구 알람이다.
    */
   async getCreatedAlarms(userId: string): Promise<Alarm[]> {
     if (!userId) {
@@ -252,16 +247,11 @@ export const AlarmService = {
       mapAlarmDocument(alarmDoc.id, alarmDoc.data()),
     );
 
-    return alarms.sort(
-      (a, b) => a.alarmTime.getTime() - b.alarmTime.getTime(),
-    );
+    return alarms.sort((a, b) => a.alarmTime.getTime() - b.alarmTime.getTime());
   },
 
   /**
    * 친구 알람 조회
-   *
-   * ownerId가 친구 uid와 같은 알람을 조회한다.
-   * 친구 알람 기능 구현 시 사용한다.
    */
   async getFriendAlarms(friendId: string): Promise<Alarm[]> {
     if (!friendId) {
@@ -279,15 +269,11 @@ export const AlarmService = {
       mapAlarmDocument(alarmDoc.id, alarmDoc.data()),
     );
 
-    return alarms.sort(
-      (a, b) => a.alarmTime.getTime() - b.alarmTime.getTime(),
-    );
+    return alarms.sort((a, b) => a.alarmTime.getTime() - b.alarmTime.getTime());
   },
 
   /**
    * 알람 단건 조회
-   *
-   * 알람 수정 화면에서 기존 알람 정보를 불러올 때 사용한다.
    */
   async getAlarmById(alarmId: string): Promise<Alarm | null> {
     if (!alarmId) {
@@ -307,15 +293,7 @@ export const AlarmService = {
   /**
    * 알람 생성
    *
-   * Firestore alarms 컬렉션에 새 알람을 저장한다.
-   *
-   * 내 알람 생성:
-   * ownerId = currentUser.uid
-   * creatorId = currentUser.uid
-   *
-   * 친구 알람 생성:
-   * ownerId = friend.uid
-   * creatorId = currentUser.uid
+   * Firestore 저장 후 OS 로컬 알림까지 예약한다.
    */
   async createAlarm(data: CreateAlarmInput): Promise<Alarm> {
     validateCreateAlarmInput(data);
@@ -325,25 +303,28 @@ export const AlarmService = {
       toFirestoreAlarmData(data),
     );
 
-    return {
+    const alarm: Alarm = {
       alarmId: docRef.id,
       ...data,
       title: data.title.trim(),
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+
+    try {
+      return await scheduleAndSaveNotificationId(alarm);
+    } catch (error) {
+      await deleteDoc(doc(db, ALARMS_COLLECTION, docRef.id));
+      throw error;
+    }
   },
 
   /**
    * 알람 수정
    *
-   * 제목, 날짜, 시간, 반복 설정, 활성화 여부 등을 수정한다.
-   * NotificationService 연동 후에는 시간이나 반복 설정 변경 시 알림 재예약도 함께 처리할 예정이다.
+   * 기존 예약 알림을 취소하고 새 정보로 다시 예약한다.
    */
-  async updateAlarm(
-    alarmId: string,
-    data: UpdateAlarmInput,
-  ): Promise<Alarm> {
+  async updateAlarm(alarmId: string, data: UpdateAlarmInput): Promise<Alarm> {
     if (!alarmId) {
       throw new Error("알람 ID가 없습니다.");
     }
@@ -357,6 +338,14 @@ export const AlarmService = {
       throw new Error("알람을 찾을 수 없습니다.");
     }
 
+    const previousAlarm = mapAlarmDocument(alarmDoc.id, alarmDoc.data());
+
+    if (previousAlarm.notificationId) {
+      await NotificationService.cancelAlarmNotification(
+        previousAlarm.notificationId,
+      );
+    }
+
     await updateDoc(alarmRef, toFirestoreUpdateData(data));
 
     const updatedAlarmDoc = await getDoc(alarmRef);
@@ -365,14 +354,33 @@ export const AlarmService = {
       throw new Error("수정된 알람을 불러올 수 없습니다.");
     }
 
-    return mapAlarmDocument(updatedAlarmDoc.id, updatedAlarmDoc.data());
+    const updatedAlarm = mapAlarmDocument(
+      updatedAlarmDoc.id,
+      updatedAlarmDoc.data(),
+    );
+
+    if (!updatedAlarm.isActive) {
+      await updateDoc(alarmRef, {
+        notificationId: null,
+        updatedAt: serverTimestamp(),
+      });
+
+      return {
+        ...updatedAlarm,
+        notificationId: undefined,
+      };
+    }
+
+    return scheduleAndSaveNotificationId({
+      ...updatedAlarm,
+      notificationId: undefined,
+    });
   },
 
   /**
    * 알람 삭제
    *
-   * Firestore에서 해당 알람 문서를 삭제한다.
-   * NotificationService 연동 후에는 삭제 전에 예약된 알림도 취소해야 한다.
+   * 예약된 알림을 먼저 취소하고 Firestore 문서를 삭제한다.
    */
   async deleteAlarm(alarmId: string): Promise<void> {
     if (!alarmId) {
@@ -386,15 +394,20 @@ export const AlarmService = {
       throw new Error("알람을 찾을 수 없습니다.");
     }
 
+    const alarm = mapAlarmDocument(alarmDoc.id, alarmDoc.data());
+
+    if (alarm.notificationId) {
+      await NotificationService.cancelAlarmNotification(alarm.notificationId);
+    }
+
     await deleteDoc(alarmRef);
   },
 
   /**
    * 알람 활성화 / 비활성화
    *
-   * isActive 값을 변경한다.
-   * NotificationService 연동 후에는 활성화 시 알림 예약,
-   * 비활성화 시 알림 취소를 함께 처리한다.
+   * 활성화: 알림 예약
+   * 비활성화: 기존 예약 취소
    */
   async toggleAlarm(alarmId: string, isActive: boolean): Promise<Alarm> {
     if (!alarmId) {
@@ -402,5 +415,36 @@ export const AlarmService = {
     }
 
     return this.updateAlarm(alarmId, { isActive });
+  },
+
+  /**
+   * 현재 로그인한 사용자의 활성 알람을 다시 예약한다.
+   *
+   * 앱 재설치, 앱 데이터 초기화, 알림 ID 유실 상황에서 보정용으로 사용한다.
+   * 앱 시작 시 App.tsx에서 한 번 호출한다.
+   */
+  async syncMyActiveAlarms(userId: string): Promise<void> {
+    const alarms = await this.getMyAlarms(userId);
+
+    for (const alarm of alarms) {
+      if (!alarm.isActive) {
+        continue;
+      }
+
+      if (alarm.notificationId) {
+        await NotificationService.cancelAlarmNotification(alarm.notificationId);
+      }
+
+      const notificationId =
+        await NotificationService.scheduleAlarmNotification({
+          ...alarm,
+          notificationId: undefined,
+        });
+
+      await updateDoc(doc(db, ALARMS_COLLECTION, alarm.alarmId), {
+        notificationId,
+        updatedAt: serverTimestamp(),
+      });
+    }
   },
 };

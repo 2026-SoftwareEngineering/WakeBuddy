@@ -1,19 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { User } from "./src/models/User";
 import { AuthService } from "./src/services/AuthService";
+import { AlarmService } from "./src/services/AlarmService";
+import { NotificationService } from "./src/services/NotificationService";
 
 import MainScreen from "./src/screens/MainScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import SignUpScreen from "./src/screens/SignUpScreen";
 import AppHomeScreen from "./src/screens/AppHomeScreen";
 import AlarmFormScreen from "./src/screens/AlarmFormScreen";
+import { useState } from "react";
 
 /**
  * 앱 전체 화면 이름
- *
- * 기본 Expo 구조에서는 Expo Router를 사용하지 않으므로,
- * App.tsx에서 현재 보여줄 화면을 state로 관리한다.
  */
 export type ScreenName = "main" | "login" | "signup" | "home" | "alarmForm";
 
@@ -37,17 +37,20 @@ export default function App() {
 
   /**
    * 앱 실행 시 Firebase 로그인 상태를 감지한다.
-   *
-   * 이미 로그인된 사용자가 있으면 홈 화면으로 이동하고,
-   * 로그인된 사용자가 없으면 로그인/회원가입 Main 화면을 보여준다.
    */
   useEffect(() => {
-    const unsubscribe = AuthService.watchAuthState((user) => {
+    const unsubscribe = AuthService.watchAuthState(async (user) => {
       setCurrentUser(user);
       setIsAuthLoading(false);
 
       if (user) {
         setScreen("home");
+
+        try {
+          await AlarmService.syncMyActiveAlarms(user.uid);
+        } catch (error) {
+          console.log("알람 동기화 실패:", error);
+        }
       } else {
         setScreen("main");
       }
@@ -57,10 +60,20 @@ export default function App() {
   }, []);
 
   /**
-   * 내 알람 생성 화면으로 이동한다.
+   * 알림을 눌렀을 때 실행되는 리스너 등록
    *
-   * 내 알람 생성이므로 alarmOwnerId는 비워둔다.
-   * AlarmFormScreen에서는 alarmOwnerId가 없으면 currentUser.uid를 ownerId로 사용한다.
+   * 알림을 누르면 앱이 열리고,
+   * NotificationService에서 알림 센터에 남은 알림을 정리한다.
+   */
+  useEffect(() => {
+    const unsubscribe =
+      NotificationService.registerNotificationResponseListener();
+
+    return unsubscribe;
+  }, []);
+
+  /**
+   * 내 알람 생성 화면으로 이동한다.
    */
   const goCreateAlarm = () => {
     setEditingAlarmId(null);
@@ -71,9 +84,6 @@ export default function App() {
 
   /**
    * 친구 알람 생성 화면으로 이동한다.
-   *
-   * 친구 알람은 ownerId가 친구 uid이고,
-   * creatorId가 현재 로그인한 사용자 uid가 된다.
    */
   const goCreateFriendAlarm = (friendId: string, friendName: string) => {
     setEditingAlarmId(null);
@@ -84,9 +94,6 @@ export default function App() {
 
   /**
    * 알람 수정 화면으로 이동한다.
-   *
-   * 수정은 기존 알람을 불러와서 수정하는 흐름이므로
-   * alarmOwnerId는 따로 설정하지 않는다.
    */
   const goEditAlarm = (alarmId: string) => {
     setEditingAlarmId(alarmId);

@@ -13,7 +13,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gwanghwi.wakebuddy"
     },
     "android": {
       "adaptiveIcon": {
@@ -27,7 +28,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/sounds/alarm_29s.wav"
+          ],
+          "enableBackgroundRemoteNotifications": false
+        }
+      ]
     ]
   }
 }

@@ -24,13 +24,12 @@ export function weekdayToNumber(weekday: Weekday): number {
 }
 
 /**
- * 알람 날짜와 알람 시간을 하나의 Date 객체로 합친다.
+ * 알람 시간을 오늘 날짜 기준으로 Date 객체로 만든다.
  *
- * alarmDate는 날짜 정보를 담당하고,
- * alarmTime은 시/분 정보를 담당한다.
+ * 날짜 선택 기능이 제거되었으므로 오늘 날짜를 기준으로 사용한다.
  */
 export function combineAlarmDateTime(alarm: Alarm): Date {
-  const combined = new Date(alarm.alarmDate);
+  const combined = new Date();
 
   combined.setHours(alarm.alarmTime.getHours());
   combined.setMinutes(alarm.alarmTime.getMinutes());
@@ -46,14 +45,19 @@ export function combineAlarmDateTime(alarm: Alarm): Date {
  * 이미 지난 시간이면 오류를 발생시켜 사용자가 미래 시간을 다시 선택하게 한다.
  */
 export function getOneTimeAlarmDate(alarm: Alarm): Date {
-  const alarmDateTime = combineAlarmDateTime(alarm);
   const now = new Date();
+  const next = new Date();
 
-  if (alarmDateTime.getTime() <= now.getTime()) {
+  next.setHours(alarm.alarmTime.getHours());
+  next.setMinutes(alarm.alarmTime.getMinutes());
+  next.setSeconds(0);
+  next.setMilliseconds(0);
+
+  if (next.getTime() <= now.getTime()) {
     throw new Error("현재 시간 이후의 알람 시간을 선택해주세요.");
   }
 
-  return alarmDateTime;
+  return next;
 }
 
 /**
