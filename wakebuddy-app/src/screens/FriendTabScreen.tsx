@@ -22,6 +22,12 @@ type Props = {
   goCreateFriendAlarm: (friendId: string, friendName: string) => void;
 };
 
+type FriendRequestWithUser = FriendRequest & {
+  // 신청 현황에서는 receiverId 사용자 정보
+  // 수신함에서는 senderId 사용자 정보
+  user?: User | null;
+};
+
 /**
  * 친구 탭 화면
  *
@@ -37,8 +43,10 @@ export default function FriendTabScreen({
   const [friends, setFriends] = useState<User[]>([]);
   const [friendEmail, setFriendEmail] = useState("");
 
-  const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
-  const [receivedRequests, setReceivedRequests] = useState<FriendRequest[]>([]);
+  const [sentRequests, setSentRequests] = useState<FriendRequestWithUser[]>([]);
+  const [receivedRequests, setReceivedRequests] = useState<
+    FriendRequestWithUser[]
+  >([]);
 
   /**
    * 친구 목록 조회
@@ -50,20 +58,50 @@ export default function FriendTabScreen({
 
   /**
    * 보낸 친구 요청 조회
+   *
+   * friendRequests에는 receiverId만 저장되어 있으므로
+   * users 컬렉션에서 receiverId의 사용자 정보를 추가로 조회해 화면에 표시한다.
    */
   const loadSentRequests = async () => {
     const data = await FriendRequestService.getSentRequests(currentUser.uid);
-    setSentRequests(data);
+
+    const dataWithUsers = await Promise.all(
+      data.map(async (request) => {
+        const user = await FriendService.getUserById(request.receiverId);
+
+        return {
+          ...request,
+          user,
+        };
+      }),
+    );
+
+    setSentRequests(dataWithUsers);
   };
 
   /**
    * 받은 친구 요청 조회
+   *
+   * friendRequests에는 senderId만 저장되어 있으므로
+   * users 컬렉션에서 senderId의 사용자 정보를 추가로 조회해 화면에 표시한다.
    */
   const loadReceivedRequests = async () => {
     const data = await FriendRequestService.getReceivedRequests(
       currentUser.uid,
     );
-    setReceivedRequests(data);
+
+    const dataWithUsers = await Promise.all(
+      data.map(async (request) => {
+        const user = await FriendService.getUserById(request.senderId);
+
+        return {
+          ...request,
+          user,
+        };
+      }),
+    );
+
+    setReceivedRequests(dataWithUsers);
   };
 
   /**
@@ -194,6 +232,43 @@ export default function FriendTabScreen({
     }
   };
 
+  /**
+   * 친구 요청 상태를 한글로 표시한다.
+   */
+  const formatRequestStatus = (status: FriendRequest["status"]) => {
+    if (status === "pending") {
+      return "대기 중";
+    }
+
+    if (status === "accepted") {
+      return "수락됨";
+    }
+
+    if (status === "rejected") {
+      return "거절됨";
+    }
+
+    if (status === "canceled") {
+      return "취소됨";
+    }
+
+    return status;
+  };
+
+  /**
+   * 사용자 이름 표시
+   */
+  const getDisplayName = (user?: User | null) => {
+    return user?.displayName || "이름 없음";
+  };
+
+  /**
+   * 사용자 이메일 표시
+   */
+  const getDisplayEmail = (user?: User | null) => {
+    return user?.email || "이메일 정보 없음";
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>친구</Text>
@@ -322,9 +397,14 @@ export default function FriendTabScreen({
           renderItem={({ item }) => (
             <View style={styles.card}>
               <View>
-                <Text style={styles.cardTitle}>받는 사용자</Text>
-                <Text style={styles.cardSub}>{item.receiverId}</Text>
-                <Text style={styles.status}>상태: {item.status}</Text>
+                <Text style={styles.cardLabel}>받는 친구</Text>
+                <Text style={styles.cardTitle}>
+                  {getDisplayName(item.user)}
+                </Text>
+                <Text style={styles.cardSub}>{getDisplayEmail(item.user)}</Text>
+                <Text style={styles.status}>
+                  상태: {formatRequestStatus(item.status)}
+                </Text>
               </View>
 
               {item.status === "pending" && (
@@ -352,9 +432,14 @@ export default function FriendTabScreen({
           renderItem={({ item }) => (
             <View style={styles.card}>
               <View>
-                <Text style={styles.cardTitle}>보낸 사용자</Text>
-                <Text style={styles.cardSub}>{item.senderId}</Text>
-                <Text style={styles.status}>상태: {item.status}</Text>
+                <Text style={styles.cardLabel}>보낸 친구</Text>
+                <Text style={styles.cardTitle}>
+                  {getDisplayName(item.user)}
+                </Text>
+                <Text style={styles.cardSub}>{getDisplayEmail(item.user)}</Text>
+                <Text style={styles.status}>
+                  상태: {formatRequestStatus(item.status)}
+                </Text>
               </View>
 
               {item.status === "pending" && (
@@ -449,6 +534,11 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
   },
+  cardLabel: {
+    color: "#777",
+    fontWeight: "700",
+    marginBottom: 4,
+  },
   cardTitle: {
     fontSize: 17,
     fontWeight: "800",
@@ -487,6 +577,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 10,
     alignSelf: "flex-start",
+    marginTop: 14,
   },
   dangerText: {
     color: "#c00",

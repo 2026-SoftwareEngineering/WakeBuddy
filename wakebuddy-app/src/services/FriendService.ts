@@ -58,6 +58,26 @@ function mapFriendshipDocument(friendshipId: string, data: any): Friendship {
 
 export const FriendService = {
   /**
+   * uid로 사용자 정보 조회
+   *
+   * 친구 요청 화면에서 senderId / receiverId 대신
+   * 사용자 이름과 이메일을 표시할 때 사용한다.
+   */
+  async getUserById(userId: string): Promise<User | null> {
+    if (!userId) {
+      return null;
+    }
+
+    const userDoc = await getDoc(doc(db, USERS_COLLECTION, userId));
+
+    if (!userDoc.exists()) {
+      return null;
+    }
+
+    return mapUserDocument(userDoc.id, userDoc.data());
+  },
+
+  /**
    * 친구 목록 조회
    *
    * friendships 컬렉션에서 userIds 배열에 현재 사용자 uid가 포함된 문서를 조회한다.
