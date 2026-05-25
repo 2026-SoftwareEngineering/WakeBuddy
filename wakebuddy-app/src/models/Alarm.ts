@@ -17,7 +17,7 @@ export type Alarm = {
   title: string;
 
   // 알람 날짜
-  alarmDate: Date;
+  alarmDate?: Date;
 
   // 알람 시간
   alarmTime: Date;
@@ -46,7 +46,7 @@ export type CreateAlarmInput = {
   ownerId: string;
   creatorId: string;
   title: string;
-  alarmDate: Date;
+  alarmDate?: Date;
   alarmTime: Date;
   repeatType: RepeatType;
   repeatDays: Weekday[];

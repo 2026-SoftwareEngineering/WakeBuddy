@@ -1,16 +1,20 @@
 import * as Notifications from "expo-notifications";
-import { Alarm } from "../models/Alarm";
+import { Platform } from "react-native";
+import { Alarm, Weekday } from "../models/Alarm";
 import {
   getNextDailyAlarmDate,
   getNextWeeklyAlarmDate,
   getOneTimeAlarmDate,
 } from "../utils/alarmSchedule";
 
+const ALARM_SOUND_FILE = "alarm_29s.wav";
+const ALARM_CHANNEL_ID = "wakebuddy-alarm-channel-v1";
+const NOTIFICATION_ID_SEPARATOR = ",";
+
 /**
  * 앱이 foreground 상태일 때 알림이 어떻게 표시될지 설정한다.
  *
- * shouldShowBanner / shouldShowList는 SDK 버전에 따라 동작이 달라질 수 있으므로,
- * 타입 오류가 나면 shouldShowAlert 방식으로 바꿔야 할 수 있다.
+ * shouldPlaySound: true로 해야 앱을 켜둔 상태에서도 알람 사운드가 난다.
  */
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -21,17 +25,6 @@ Notifications.setNotificationHandler({
   }),
 });
 
-/**
- * 여러 개의 알림 ID를 문자열 하나로 저장하기 위한 구분자
- *
- * weekly 반복 알람은 요일별로 여러 개의 알림을 예약할 수 있으므로,
- * notificationId를 여러 개 저장할 수 있게 문자열로 합쳐둔다.
- */
-const NOTIFICATION_ID_SEPARATOR = ",";
-
-/**
- * 알림 ID 문자열을 배열로 변환한다.
- */
 function parseNotificationIds(notificationId?: string): string[] {
   if (!notificationId) {
     return [];
@@ -43,34 +36,119 @@ function parseNotificationIds(notificationId?: string): string[] {
     .filter(Boolean);
 }
 
-/**
- * 알림 ID 배열을 문자열로 변환한다.
- */
 function stringifyNotificationIds(notificationIds: string[]): string {
   return notificationIds.join(NOTIFICATION_ID_SEPARATOR);
 }
 
 /**
- * 로컬 알림 예약
+ * Expo weekly trigger에서 사용하는 요일 숫자로 변환한다.
  *
- * Expo Notifications의 scheduleNotificationAsync를 사용해
- * 지정한 날짜/시간에 알림이 뜨도록 예약한다.
+ * Expo 기준:
+ * 1 = 일요일
+ * 2 = 월요일
+ * ...
+ * 7 = 토요일
  */
-async function scheduleOneNotification(
-  alarm: Alarm,
-  triggerDate: Date,
-  repeats: boolean,
-): Promise<string> {
-  return Notifications.scheduleNotificationAsync({
-    content: {
-      title: "WakeBuddy",
-      body: alarm.title,
-      sound: true,
+function weekdayToExpoNumber(weekday: Weekday): number {
+  const weekdayMap: Record<Weekday, number> = {
+    sun: 1,
+    mon: 2,
+    tue: 3,
+    wed: 4,
+    thu: 5,
+    fri: 6,
+    sat: 7,
+  };
+
+  return weekdayMap[weekday];
+}
+
+/**
+ * Android 알림 채널 생성
+ *
+ * Android 8 이상에서는 content.sound만으로는 커스텀 사운드가 안 날 수 있고,
+ * 반드시 channel에도 sound를 지정해야 한다.
+ */
+async function ensureAlarmNotificationChannel(): Promise<void> {
+  if (Platform.OS !== "android") {
+    return;
+  }
+
+  await Notifications.setNotificationChannelAsync(ALARM_CHANNEL_ID, {
+    name: "WakeBuddy 알람",
+    importance: Notifications.AndroidImportance.MAX,
+    sound: ALARM_SOUND_FILE,
+    vibrationPattern: [0, 500, 250, 500],
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+}
+
+/**
+ * 알림 content 공통값
+ */
+function createNotificationContent(alarm: Alarm): Notifications.NotificationContentInput {
+  return {
+    title: "WakeBuddy",
+    body: alarm.title,
+    sound: ALARM_SOUND_FILE,
+    data: {
+      alarmId: alarm.alarmId,
+      ownerId: alarm.ownerId,
+      creatorId: alarm.creatorId,
     },
+  };
+}
+
+/**
+ * 반복 없음 알림 예약
+ */
+async function scheduleOneTimeNotification(alarm: Alarm): Promise<string> {
+  const triggerDate = getOneTimeAlarmDate(alarm);
+
+  return Notifications.scheduleNotificationAsync({
+    content: createNotificationContent(alarm),
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: triggerDate,
-      repeats,
+      channelId: ALARM_CHANNEL_ID,
+    },
+  });
+}
+
+/**
+ * 매일 반복 알림 예약
+ */
+async function scheduleDailyNotification(alarm: Alarm): Promise<string> {
+  const triggerDate = getNextDailyAlarmDate(alarm);
+
+  return Notifications.scheduleNotificationAsync({
+    content: createNotificationContent(alarm),
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: triggerDate.getHours(),
+      minute: triggerDate.getMinutes(),
+      channelId: ALARM_CHANNEL_ID,
+    },
+  });
+}
+
+/**
+ * 요일 반복 알림 하나 예약
+ */
+async function scheduleWeeklyNotification(
+  alarm: Alarm,
+  weekday: Weekday,
+): Promise<string> {
+  const triggerDate = getNextWeeklyAlarmDate(alarm, weekday);
+
+  return Notifications.scheduleNotificationAsync({
+    content: createNotificationContent(alarm),
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+      weekday: weekdayToExpoNumber(weekday),
+      hour: triggerDate.getHours(),
+      minute: triggerDate.getMinutes(),
+      channelId: ALARM_CHANNEL_ID,
     },
   });
 }
@@ -78,10 +156,10 @@ async function scheduleOneNotification(
 export const NotificationService = {
   /**
    * 알림 권한 요청
-   *
-   * 알림을 예약하기 전에 사용자에게 알림 권한을 요청한다.
    */
   async requestNotificationPermission(): Promise<boolean> {
+    await ensureAlarmNotificationChannel();
+
     const currentPermission = await Notifications.getPermissionsAsync();
 
     if (currentPermission.status === "granted") {
@@ -89,23 +167,15 @@ export const NotificationService = {
     }
 
     const requestedPermission = await Notifications.requestPermissionsAsync();
-
     return requestedPermission.status === "granted";
   },
 
   /**
    * 알람 알림 예약
    *
-   * repeatType에 따라 알림 예약 방식이 달라진다.
-   *
-   * none:
-   * - 한 번만 울리는 알림 예약
-   *
-   * daily:
-   * - 매일 반복 알림 예약
-   *
-   * weekly:
-   * - 선택한 요일마다 알림 예약
+   * none: 한 번만 울림
+   * daily: 매일 반복
+   * weekly: 선택 요일마다 반복
    */
   async scheduleAlarmNotification(alarm: Alarm): Promise<string> {
     if (!alarm.isActive) {
@@ -119,25 +189,11 @@ export const NotificationService = {
     }
 
     if (alarm.repeatType === "none") {
-      const triggerDate = getOneTimeAlarmDate(alarm);
-      const notificationId = await scheduleOneNotification(
-        alarm,
-        triggerDate,
-        false,
-      );
-
-      return notificationId;
+      return scheduleOneTimeNotification(alarm);
     }
 
     if (alarm.repeatType === "daily") {
-      const triggerDate = getNextDailyAlarmDate(alarm);
-      const notificationId = await scheduleOneNotification(
-        alarm,
-        triggerDate,
-        true,
-      );
-
-      return notificationId;
+      return scheduleDailyNotification(alarm);
     }
 
     if (alarm.repeatType === "weekly") {
@@ -148,13 +204,7 @@ export const NotificationService = {
       const notificationIds: string[] = [];
 
       for (const weekday of alarm.repeatDays) {
-        const triggerDate = getNextWeeklyAlarmDate(alarm, weekday);
-        const notificationId = await scheduleOneNotification(
-          alarm,
-          triggerDate,
-          true,
-        );
-
+        const notificationId = await scheduleWeeklyNotification(alarm, weekday);
         notificationIds.push(notificationId);
       }
 
@@ -166,8 +216,6 @@ export const NotificationService = {
 
   /**
    * 예약된 알림 취소
-   *
-   * notificationId가 여러 개인 경우에도 모두 취소한다.
    */
   async cancelAlarmNotification(notificationId?: string): Promise<void> {
     const notificationIds = parseNotificationIds(notificationId);
@@ -178,9 +226,7 @@ export const NotificationService = {
   },
 
   /**
-   * 알림 재예약
-   *
-   * 기존 알림을 취소하고, 새 알람 정보로 다시 예약한다.
+   * 기존 알림 취소 후 재예약
    */
   async rescheduleAlarmNotification(alarm: Alarm): Promise<string> {
     if (alarm.notificationId) {
@@ -188,5 +234,23 @@ export const NotificationService = {
     }
 
     return this.scheduleAlarmNotification(alarm);
+  },
+
+  /**
+   * 알림을 눌렀을 때 실행되는 리스너 등록
+   *
+   * 알림을 누르면 iOS/Android 시스템 알림음은 보통 즉시 종료된다.
+   * 여기서는 알림 센터에 남은 WakeBuddy 알림도 정리한다.
+   */
+  registerNotificationResponseListener() {
+    const subscription = Notifications.addNotificationResponseReceivedListener(
+      async () => {
+        await Notifications.dismissAllNotificationsAsync();
+      },
+    );
+
+    return () => {
+      subscription.remove();
+    };
   },
 };

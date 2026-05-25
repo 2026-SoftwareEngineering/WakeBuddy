@@ -4,6 +4,7 @@ import DateTimePicker, {
 import { useEffect, useState } from "react";
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -55,6 +56,9 @@ const WEEKDAYS: { label: string; value: Weekday }[] = [
  * 친구 알람 생성:
  * - ownerId = alarmOwnerId
  * - creatorId = currentUser.uid
+ *
+ * 날짜 선택 기능은 제거되었으며,
+ * 반복 없음 / 매일 / 요일 반복 방식으로만 알람을 설정한다.
  */
 export default function AlarmFormScreen({
   currentUser,
@@ -66,14 +70,14 @@ export default function AlarmFormScreen({
   const [targetAlarm, setTargetAlarm] = useState<Alarm | null>(null);
   const [title, setTitle] = useState("");
 
-  const [alarmDate, setAlarmDate] = useState(new Date());
+  // 알람 시간 (날짜 없이 시간만 사용)
   const [alarmTime, setAlarmTime] = useState(new Date());
 
   const [repeatType, setRepeatType] = useState<RepeatType>("none");
   const [repeatDays, setRepeatDays] = useState<Weekday[]>([]);
   const [isActive, setIsActive] = useState(true);
 
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  // 시간 선택 피커 표시 여부
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   /**
@@ -94,7 +98,6 @@ export default function AlarmFormScreen({
 
         setTargetAlarm(alarm);
         setTitle(alarm.title);
-        setAlarmDate(alarm.alarmDate);
         setAlarmTime(alarm.alarmTime);
         setRepeatType(alarm.repeatType);
         setRepeatDays(alarm.repeatDays);
@@ -111,30 +114,28 @@ export default function AlarmFormScreen({
   }, [alarmId]);
 
   /**
-   * 날짜 선택 결과를 반영한다.
-   */
-  const handleDateChange = (
-    _event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    setShowDatePicker(false);
-
-    if (selectedDate) {
-      setAlarmDate(selectedDate);
-    }
-  };
-
-  /**
    * 시간 선택 결과를 반영한다.
+   *
+   * Android에서는 시간 선택 시 이벤트가 두 번 발생할 수 있으므로,
+   * event.type이 "set"일 때만 시간을 반영하고 피커를 닫는다.
    */
   const handleTimeChange = (
-    _event: DateTimePickerEvent,
+    event: DateTimePickerEvent,
     selectedTime?: Date,
   ) => {
-    setShowTimePicker(false);
-
-    if (selectedTime) {
-      setAlarmTime(selectedTime);
+    if (Platform.OS === "ios") {
+      // iOS는 스피너 방식이라 선택값만 반영하고 피커는 유지
+      if (selectedTime) {
+        setAlarmTime(selectedTime);
+      }
+    } else {
+      // Android는 확인 버튼 누를 때만 반영하고 피커 닫기
+      if (event.type === "set" && selectedTime) {
+        setAlarmTime(selectedTime);
+        setShowTimePicker(false);
+      } else if (event.type === "dismissed") {
+        setShowTimePicker(false);
+      }
     }
   };
 
@@ -191,11 +192,11 @@ export default function AlarmFormScreen({
    * - alarmOwnerId가 없으면 내 알람을 생성한다.
    */
   const handleSave = async () => {
+    setShowTimePicker(false);
     try {
       if (targetAlarm) {
         await AlarmService.updateAlarm(targetAlarm.alarmId, {
           title,
-          alarmDate,
           alarmTime,
           repeatType,
           repeatDays,
@@ -223,7 +224,6 @@ export default function AlarmFormScreen({
         ownerId: targetOwnerId,
         creatorId: currentUser.uid,
         title,
-        alarmDate,
         alarmTime,
         repeatType,
         repeatDays,
@@ -258,23 +258,6 @@ export default function AlarmFormScreen({
         onChangeText={setTitle}
       />
 
-      <Text style={styles.label}>날짜</Text>
-      <TouchableOpacity
-        style={styles.selectBox}
-        onPress={() => setShowDatePicker(true)}
-      >
-        <Text>{alarmDate.toLocaleDateString()}</Text>
-      </TouchableOpacity>
-
-      {showDatePicker && (
-        <DateTimePicker
-          value={alarmDate}
-          mode="date"
-          display="default"
-          onChange={handleDateChange}
-        />
-      )}
-
       <Text style={styles.label}>시간</Text>
       <TouchableOpacity
         style={styles.selectBox}
@@ -292,7 +275,7 @@ export default function AlarmFormScreen({
         <DateTimePicker
           value={alarmTime}
           mode="time"
-          display="default"
+          display={Platform.OS === "ios" ? "spinner" : "default"}
           onChange={handleTimeChange}
         />
       )}

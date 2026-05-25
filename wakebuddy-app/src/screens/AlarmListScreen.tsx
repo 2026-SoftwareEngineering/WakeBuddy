@@ -124,15 +124,36 @@ export default function AlarmListScreen({
   /**
    * 날짜와 시간을 화면에 표시하기 위한 문자열로 변환한다.
    */
-  const formatAlarmDateTime = (alarm: Alarm) => {
-    const date = alarm.alarmDate.toLocaleDateString();
-    const time = alarm.alarmTime.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+ function formatAlarmDateTime(alarm: Alarm) {
+  const timeText = alarm.alarmTime.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
-    return `${date} ${time}`;
-  };
+  if (alarm.repeatType === "daily") {
+    return `매일 ${timeText}`;
+  }
+
+  if (alarm.repeatType === "weekly") {
+    const weekdayLabels: Record<string, string> = {
+      sun: "일",
+      mon: "월",
+      tue: "화",
+      wed: "수",
+      thu: "목",
+      fri: "금",
+      sat: "토",
+    };
+
+    const daysText = alarm.repeatDays
+      .map((day) => weekdayLabels[day])
+      .join(", ");
+
+    return `${daysText} ${timeText}`;
+  }
+
+  return `오늘 ${timeText}`;
+}
 
   /**
    * 반복 설정을 화면에 표시한다.
