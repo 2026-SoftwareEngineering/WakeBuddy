@@ -14,6 +14,10 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase/firebaseConfig";
 import { User } from "../models/User";
+import {
+  validateLoginInput,
+  validateSignUpInput,
+} from "../utils/AuthValidationUtils";
 
 /**
  * Firebase Authentication의 사용자 객체를
@@ -61,17 +65,7 @@ export const AuthService = {
     password: string,
     displayName: string,
   ): Promise<User> {
-    if (!email.trim()) {
-      throw new Error("이메일을 입력해주세요.");
-    }
-
-    if (!password.trim()) {
-      throw new Error("비밀번호를 입력해주세요.");
-    }
-
-    if (!displayName.trim()) {
-      throw new Error("이름을 입력해주세요.");
-    }
+    validateSignUpInput(email, password, displayName);
 
     const userCredential = await createUserWithEmailAndPassword(
       auth,
@@ -103,13 +97,7 @@ export const AuthService = {
    * Firestore users 컬렉션에서 사용자 프로필을 조회한다.
    */
   async login(email: string, password: string): Promise<User> {
-    if (!email.trim()) {
-      throw new Error("이메일을 입력해주세요.");
-    }
-
-    if (!password.trim()) {
-      throw new Error("비밀번호를 입력해주세요.");
-    }
+    validateLoginInput(email, password);
 
     const userCredential = await signInWithEmailAndPassword(
       auth,
